@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+:root {
+  --nba-blue: #1d428a;
+  --nba-red: #c8102e;
+  --nba-orange: #f97316;
+  --nba-dark: #0a0a0a;
+  --nba-card: #121212;
+}
+
+@theme inline {
+  --color-nba-blue: var(--nba-blue);
+  --color-nba-red: var(--nba-red);
+  --color-nba-orange: var(--nba-orange);
+  --color-nba-dark: var(--nba-dark);
+  --color-nba-card: var(--nba-card);
+  --font-sans: var(--font-inter);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Hide scrollbar utility */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Value bet glow effect */
+.value-glow {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+}
+
+/* Glass effect */
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Animation for slide in */
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slideInFromRight 0.3s ease-out;
+}

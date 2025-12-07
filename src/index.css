@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme {
+  --color-nba-blue: #17408B;
+  --color-nba-red: #C9082A;
+  --color-nba-black: #000000;
+  --color-nba-dark: #121212;
+  --color-nba-card: #1E1E1E;
+}
+
+@layer base {
+  html, body {
+    @apply h-full antialiased bg-nba-dark text-white font-sans;
+  }
+}
