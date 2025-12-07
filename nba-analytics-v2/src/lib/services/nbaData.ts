@@ -316,3 +316,70 @@ export const getTeamDefensiveStats = cache(async (season: string = '2024'): Prom
 
     return Array.from(teamMap.values());
 });
+
+// Team Roster Types
+export interface TeamPlayer {
+    id: string;
+    name: string;
+    position: string;
+    ppg: number;  // Points per game
+    apg: number;  // Assists per game
+    rpg: number;  // Rebounds per game
+}
+
+export interface TeamRoster {
+    teamId: string;
+    teamName: string;
+    alias: string;
+    players: TeamPlayer[];
+}
+
+// Get team roster with player stats
+export const getTeamRoster = cache(async (teamId: string): Promise<TeamRoster | null> => {
+    try {
+        interface RawPlayer {
+            id: string;
+            full_name: string;
+            primary_position: string;
+            average?: {
+                points?: number;
+                assists?: number;
+                rebounds?: number;
+            };
+        }
+
+        interface RawTeamProfile {
+            id: string;
+            name: string;
+            alias: string;
+            players: RawPlayer[];
+        }
+
+        const data = await fetchSportradar<RawTeamProfile>(
+            STATS_BASE_URL,
+            `/teams/${teamId}/profile.json`
+        );
+
+        const players: TeamPlayer[] = (data.players || []).map(p => ({
+            id: p.id,
+            name: p.full_name,
+            position: p.primary_position || 'N/A',
+            ppg: p.average?.points || 0,
+            apg: p.average?.assists || 0,
+            rpg: p.average?.rebounds || 0,
+        }));
+
+        // Sort by PPG descending
+        players.sort((a, b) => b.ppg - a.ppg);
+
+        return {
+            teamId: data.id,
+            teamName: data.name,
+            alias: data.alias,
+            players,
+        };
+    } catch (error) {
+        console.error(`[NBA] Failed to get roster for team ${teamId}:`, error);
+        return null;
+    }
+});
