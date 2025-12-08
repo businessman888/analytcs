@@ -4,16 +4,41 @@
  */
 
 import { cache } from 'react';
-import { getSchedule, getTeamRoster, type TeamPlayer, type TeamRoster } from './nbaData';
+import {
+    getSchedule,
+    getGameSummary,
+    getTeamRoster,
+    getTeamSeasonalStats,
+    getInjuries,
+    type TeamPlayer,
+    type TeamRoster,
+    type GameSummary,
+    type Injury,
+    type PlayerSeasonalStats
+} from './nbaData';
 
 // Types
 export interface PlayerProjection {
     playerId: string;
     playerName: string;
     position: string;
-    projection: number;
-    line: number;
-    edge: number;
+    // Points
+    projection: number;      // Points projection
+    line: number;            // Points Vegas line
+    edge: number;            // Points edge percentage
+    // Assists
+    assistsProjection: number;
+    assistsLine: number;
+    assistsEdge: number;
+    // Rebounds
+    reboundsProjection: number;
+    reboundsLine: number;
+    reboundsEdge: number;
+    // Three Pointers
+    threesProjection: number;
+    threesLine: number;
+    threesEdge: number;
+    // Meta
     isValueBet: boolean;
     confidence: number;
 }
@@ -38,387 +63,69 @@ export interface GameAnalysis {
     };
 }
 
-// Mock NBA rosters for when API fails or during development
-const MOCK_TEAM_ROSTERS: Record<string, { name: string; alias: string; players: TeamPlayer[] }> = {
-    // Western Conference
-    'GSW': {
-        name: 'Golden State Warriors',
-        alias: 'GSW',
-        players: [
-            { id: 'curry', name: 'Stephen Curry', position: 'G', ppg: 26.4, apg: 5.1, rpg: 4.5 },
-            { id: 'wiggins', name: 'Andrew Wiggins', position: 'F', ppg: 17.1, apg: 2.3, rpg: 5.0 },
-            { id: 'kuminga', name: 'Jonathan Kuminga', position: 'F', ppg: 14.2, apg: 2.2, rpg: 4.8 },
-            { id: 'green', name: 'Draymond Green', position: 'F', ppg: 8.6, apg: 6.0, rpg: 7.2 },
-            { id: 'looney', name: 'Kevon Looney', position: 'C', ppg: 5.1, apg: 2.5, rpg: 7.3 },
-        ]
-    },
-    'LAL': {
-        name: 'Los Angeles Lakers',
-        alias: 'LAL',
-        players: [
-            { id: 'lebron', name: 'LeBron James', position: 'F', ppg: 25.7, apg: 8.3, rpg: 7.3 },
-            { id: 'ad', name: 'Anthony Davis', position: 'C', ppg: 24.1, apg: 3.5, rpg: 12.6 },
-            { id: 'reaves', name: 'Austin Reaves', position: 'G', ppg: 15.9, apg: 5.5, rpg: 4.3 },
-            { id: 'russell', name: "D'Angelo Russell", position: 'G', ppg: 14.3, apg: 4.8, rpg: 2.5 },
-            { id: 'hachimura', name: 'Rui Hachimura', position: 'F', ppg: 11.8, apg: 1.2, rpg: 4.3 },
-        ]
-    },
-    'DEN': {
-        name: 'Denver Nuggets',
-        alias: 'DEN',
-        players: [
-            { id: 'jokic', name: 'Nikola Jokic', position: 'C', ppg: 26.4, apg: 9.0, rpg: 12.4 },
-            { id: 'murray', name: 'Jamal Murray', position: 'G', ppg: 21.2, apg: 6.5, rpg: 4.1 },
-            { id: 'mpj', name: 'Michael Porter Jr.', position: 'F', ppg: 17.1, apg: 1.4, rpg: 7.0 },
-            { id: 'gordon', name: 'Aaron Gordon', position: 'F', ppg: 13.9, apg: 3.0, rpg: 6.5 },
-            { id: 'caldwell', name: 'Kentavious Caldwell-Pope', position: 'G', ppg: 10.1, apg: 2.4, rpg: 2.4 },
-        ]
-    },
-    'PHX': {
-        name: 'Phoenix Suns',
-        alias: 'PHX',
-        players: [
-            { id: 'booker', name: 'Devin Booker', position: 'G', ppg: 27.1, apg: 6.9, rpg: 4.5 },
-            { id: 'beal', name: 'Bradley Beal', position: 'G', ppg: 18.2, apg: 5.0, rpg: 4.4 },
-            { id: 'durant', name: 'Kevin Durant', position: 'F', ppg: 27.1, apg: 5.0, rpg: 6.6 },
-            { id: 'nurkic', name: 'Jusuf Nurkic', position: 'C', ppg: 9.2, apg: 3.2, rpg: 10.1 },
-            { id: 'allen', name: 'Grayson Allen', position: 'G', ppg: 11.3, apg: 3.0, rpg: 3.1 },
-        ]
-    },
-    'LAC': {
-        name: 'Los Angeles Clippers',
-        alias: 'LAC',
-        players: [
-            { id: 'kawhi', name: 'Kawhi Leonard', position: 'F', ppg: 23.7, apg: 3.6, rpg: 6.1 },
-            { id: 'harden', name: 'James Harden', position: 'G', ppg: 16.6, apg: 8.5, rpg: 5.1 },
-            { id: 'powell', name: 'Norman Powell', position: 'G', ppg: 14.3, apg: 1.9, rpg: 2.6 },
-            { id: 'zubac', name: 'Ivica Zubac', position: 'C', ppg: 11.7, apg: 1.3, rpg: 9.2 },
-            { id: 'mann', name: 'Terance Mann', position: 'G', ppg: 7.2, apg: 2.1, rpg: 3.1 },
-        ]
-    },
-    'MIN': {
-        name: 'Minnesota Timberwolves',
-        alias: 'MIN',
-        players: [
-            { id: 'ant', name: 'Anthony Edwards', position: 'G', ppg: 25.9, apg: 5.1, rpg: 5.4 },
-            { id: 'kat', name: 'Karl-Anthony Towns', position: 'C', ppg: 22.3, apg: 3.0, rpg: 8.3 },
-            { id: 'gobert', name: 'Rudy Gobert', position: 'C', ppg: 13.4, apg: 1.3, rpg: 12.9 },
-            { id: 'conley', name: 'Mike Conley', position: 'G', ppg: 9.8, apg: 5.9, rpg: 3.0 },
-            { id: 'mcdaniels', name: "Jaden McDaniels", position: 'F', ppg: 10.5, apg: 1.4, rpg: 3.5 },
-        ]
-    },
-    'OKC': {
-        name: 'Oklahoma City Thunder',
-        alias: 'OKC',
-        players: [
-            { id: 'sga', name: 'Shai Gilgeous-Alexander', position: 'G', ppg: 30.1, apg: 6.2, rpg: 5.5 },
-            { id: 'chet', name: 'Chet Holmgren', position: 'C', ppg: 16.5, apg: 2.4, rpg: 7.9 },
-            { id: 'jdub', name: 'Jalen Williams', position: 'F', ppg: 19.1, apg: 4.5, rpg: 4.0 },
-            { id: 'dort', name: 'Luguentz Dort', position: 'G', ppg: 10.8, apg: 1.7, rpg: 4.0 },
-            { id: 'giddey', name: 'Josh Giddey', position: 'G', ppg: 12.3, apg: 4.8, rpg: 6.4 },
-        ]
-    },
-    'DAL': {
-        name: 'Dallas Mavericks',
-        alias: 'DAL',
-        players: [
-            { id: 'luka', name: 'Luka Doncic', position: 'G', ppg: 33.9, apg: 9.8, rpg: 9.2 },
-            { id: 'kyrie', name: 'Kyrie Irving', position: 'G', ppg: 25.6, apg: 5.2, rpg: 5.0 },
-            { id: 'pj', name: 'P.J. Washington', position: 'F', ppg: 12.8, apg: 2.1, rpg: 5.5 },
-            { id: 'lively', name: 'Dereck Lively II', position: 'C', ppg: 8.8, apg: 1.1, rpg: 6.9 },
-            { id: 'jones', name: 'Derrick Jones Jr.', position: 'F', ppg: 8.6, apg: 1.0, rpg: 3.3 },
-        ]
-    },
-    'SAC': {
-        name: 'Sacramento Kings',
-        alias: 'SAC',
-        players: [
-            { id: 'fox', name: "De'Aaron Fox", position: 'G', ppg: 26.6, apg: 5.6, rpg: 4.6 },
-            { id: 'sabonis', name: 'Domantas Sabonis', position: 'C', ppg: 19.4, apg: 8.2, rpg: 13.7 },
-            { id: 'monk', name: 'Malik Monk', position: 'G', ppg: 15.4, apg: 5.1, rpg: 2.9 },
-            { id: 'huerter', name: 'Kevin Huerter', position: 'G', ppg: 10.2, apg: 2.8, rpg: 3.3 },
-            { id: 'barnes', name: 'Harrison Barnes', position: 'F', ppg: 11.8, apg: 1.8, rpg: 4.3 },
-        ]
-    },
-    // Eastern Conference
-    'CHI': {
-        name: 'Chicago Bulls',
-        alias: 'CHI',
-        players: [
-            { id: 'lavine', name: 'Zach LaVine', position: 'G', ppg: 22.3, apg: 4.2, rpg: 4.5 },
-            { id: 'derozan', name: 'DeMar DeRozan', position: 'F', ppg: 22.5, apg: 5.3, rpg: 4.6 },
-            { id: 'vucevic', name: 'Nikola Vucevic', position: 'C', ppg: 18.3, apg: 3.3, rpg: 10.5 },
-            { id: 'coby', name: 'Coby White', position: 'G', ppg: 12.4, apg: 3.6, rpg: 3.1 },
-            { id: 'pwill', name: 'Patrick Williams', position: 'F', ppg: 8.5, apg: 1.5, rpg: 3.9 },
-        ]
-    },
-    'BOS': {
-        name: 'Boston Celtics',
-        alias: 'BOS',
-        players: [
-            { id: 'tatum', name: 'Jayson Tatum', position: 'F', ppg: 26.9, apg: 4.9, rpg: 8.1 },
-            { id: 'brown', name: 'Jaylen Brown', position: 'G', ppg: 23.0, apg: 3.6, rpg: 5.5 },
-            { id: 'white', name: 'Derrick White', position: 'G', ppg: 15.6, apg: 5.2, rpg: 4.2 },
-            { id: 'porzingis', name: 'Kristaps Porzingis', position: 'C', ppg: 20.1, apg: 1.9, rpg: 7.2 },
-            { id: 'holiday', name: 'Jrue Holiday', position: 'G', ppg: 12.5, apg: 4.8, rpg: 5.4 },
-        ]
-    },
-    'MIL': {
-        name: 'Milwaukee Bucks',
-        alias: 'MIL',
-        players: [
-            { id: 'giannis', name: 'Giannis Antetokounmpo', position: 'F', ppg: 30.4, apg: 6.5, rpg: 11.5 },
-            { id: 'dame', name: 'Damian Lillard', position: 'G', ppg: 24.3, apg: 7.0, rpg: 4.4 },
-            { id: 'middleton', name: 'Khris Middleton', position: 'F', ppg: 15.1, apg: 5.3, rpg: 4.7 },
-            { id: 'portis', name: 'Bobby Portis', position: 'C', ppg: 13.8, apg: 1.5, rpg: 7.4 },
-            { id: 'lopez', name: 'Brook Lopez', position: 'C', ppg: 12.5, apg: 1.6, rpg: 5.2 },
-        ]
-    },
-    'NYK': {
-        name: 'New York Knicks',
-        alias: 'NYK',
-        players: [
-            { id: 'brunson', name: 'Jalen Brunson', position: 'G', ppg: 28.7, apg: 6.7, rpg: 3.5 },
-            { id: 'anunoby', name: 'OG Anunoby', position: 'F', ppg: 14.1, apg: 1.5, rpg: 4.4 },
-            { id: 'randle', name: 'Julius Randle', position: 'F', ppg: 24.0, apg: 5.0, rpg: 9.2 },
-            { id: 'robinson', name: 'Mitchell Robinson', position: 'C', ppg: 7.5, apg: 0.6, rpg: 8.5 },
-            { id: 'hart', name: 'Josh Hart', position: 'G', ppg: 9.4, apg: 4.1, rpg: 8.3 },
-        ]
-    },
-    'PHI': {
-        name: 'Philadelphia 76ers',
-        alias: 'PHI',
-        players: [
-            { id: 'embiid', name: 'Joel Embiid', position: 'C', ppg: 34.7, apg: 5.6, rpg: 11.0 },
-            { id: 'maxey', name: 'Tyrese Maxey', position: 'G', ppg: 25.9, apg: 6.2, rpg: 3.7 },
-            { id: 'harris', name: 'Tobias Harris', position: 'F', ppg: 14.0, apg: 3.1, rpg: 5.4 },
-            { id: 'melton', name: 'De\'Anthony Melton', position: 'G', ppg: 9.8, apg: 2.8, rpg: 3.6 },
-            { id: 'oubre', name: 'Kelly Oubre Jr.', position: 'F', ppg: 15.4, apg: 1.4, rpg: 5.0 },
-        ]
-    },
-    'MIA': {
-        name: 'Miami Heat',
-        alias: 'MIA',
-        players: [
-            { id: 'butler', name: 'Jimmy Butler', position: 'F', ppg: 20.8, apg: 5.0, rpg: 5.3 },
-            { id: 'herro', name: 'Tyler Herro', position: 'G', ppg: 20.8, apg: 4.5, rpg: 5.3 },
-            { id: 'adebayo', name: 'Bam Adebayo', position: 'C', ppg: 19.3, apg: 3.2, rpg: 10.4 },
-            { id: 'robinson', name: 'Duncan Robinson', position: 'G', ppg: 10.9, apg: 2.2, rpg: 3.0 },
-            { id: 'lowry', name: 'Kyle Lowry', position: 'G', ppg: 8.3, apg: 4.7, rpg: 3.6 },
-        ]
-    },
-    'CLE': {
-        name: 'Cleveland Cavaliers',
-        alias: 'CLE',
-        players: [
-            { id: 'mitchell', name: 'Donovan Mitchell', position: 'G', ppg: 26.6, apg: 6.1, rpg: 5.1 },
-            { id: 'garland', name: 'Darius Garland', position: 'G', ppg: 18.0, apg: 6.5, rpg: 2.7 },
-            { id: 'mobley', name: 'Evan Mobley', position: 'F', ppg: 15.7, apg: 3.2, rpg: 9.4 },
-            { id: 'allen', name: 'Jarrett Allen', position: 'C', ppg: 14.8, apg: 2.7, rpg: 10.5 },
-            { id: 'strus', name: 'Max Strus', position: 'G', ppg: 12.4, apg: 2.6, rpg: 3.8 },
-        ]
-    },
-    'ORL': {
-        name: 'Orlando Magic',
-        alias: 'ORL',
-        players: [
-            { id: 'paolo', name: 'Paolo Banchero', position: 'F', ppg: 22.6, apg: 5.4, rpg: 6.9 },
-            { id: 'franz', name: 'Franz Wagner', position: 'F', ppg: 19.7, apg: 3.7, rpg: 5.3 },
-            { id: 'wcj', name: 'Wendell Carter Jr.', position: 'C', ppg: 13.1, apg: 2.4, rpg: 8.7 },
-            { id: 'suggs', name: 'Jalen Suggs', position: 'G', ppg: 12.6, apg: 3.8, rpg: 3.1 },
-            { id: 'fultz', name: 'Markelle Fultz', position: 'G', ppg: 8.5, apg: 4.5, rpg: 3.6 },
-        ]
-    },
-    'IND': {
-        name: 'Indiana Pacers',
-        alias: 'IND',
-        players: [
-            { id: 'haliburton', name: 'Tyrese Haliburton', position: 'G', ppg: 20.1, apg: 10.9, rpg: 3.9 },
-            { id: 'siakam', name: 'Pascal Siakam', position: 'F', ppg: 21.3, apg: 3.8, rpg: 7.8 },
-            { id: 'turner', name: 'Myles Turner', position: 'C', ppg: 17.1, apg: 1.4, rpg: 6.9 },
-            { id: 'nembhard', name: 'Andrew Nembhard', position: 'G', ppg: 9.2, apg: 4.8, rpg: 3.1 },
-            { id: 'mathurin', name: 'Bennedict Mathurin', position: 'G', ppg: 14.5, apg: 1.5, rpg: 4.1 },
-        ]
-    },
-    'ATL': {
-        name: 'Atlanta Hawks',
-        alias: 'ATL',
-        players: [
-            { id: 'trae', name: 'Trae Young', position: 'G', ppg: 25.7, apg: 10.8, rpg: 2.8 },
-            { id: 'murray', name: 'Dejounte Murray', position: 'G', ppg: 22.1, apg: 6.1, rpg: 5.3 },
-            { id: 'hunter', name: "De'Andre Hunter", position: 'F', ppg: 15.4, apg: 1.7, rpg: 4.5 },
-            { id: 'capela', name: 'Clint Capela', position: 'C', ppg: 11.5, apg: 1.0, rpg: 10.7 },
-            { id: 'johnson', name: 'Jalen Johnson', position: 'F', ppg: 9.6, apg: 2.3, rpg: 4.8 },
-        ]
-    },
-    'BKN': {
-        name: 'Brooklyn Nets',
-        alias: 'BKN',
-        players: [
-            { id: 'bridges', name: 'Mikal Bridges', position: 'F', ppg: 19.6, apg: 3.3, rpg: 4.5 },
-            { id: 'cam', name: 'Cameron Johnson', position: 'F', ppg: 13.4, apg: 1.9, rpg: 4.3 },
-            { id: 'dinwiddie', name: 'Spencer Dinwiddie', position: 'G', ppg: 12.6, apg: 5.2, rpg: 3.1 },
-            { id: 'claxton', name: 'Nic Claxton', position: 'C', ppg: 12.1, apg: 2.3, rpg: 9.0 },
-            { id: 'schroder', name: 'Dennis Schroder', position: 'G', ppg: 14.8, apg: 4.5, rpg: 2.8 },
-        ]
-    },
-    'TOR': {
-        name: 'Toronto Raptors',
-        alias: 'TOR',
-        players: [
-            { id: 'barnes', name: 'Scottie Barnes', position: 'F', ppg: 19.9, apg: 6.1, rpg: 8.2 },
-            { id: 'quickley', name: 'Immanuel Quickley', position: 'G', ppg: 18.6, apg: 6.8, rpg: 4.8 },
-            { id: 'poeltl', name: 'Jakob Poeltl', position: 'C', ppg: 11.1, apg: 2.6, rpg: 8.6 },
-            { id: 'anunoby', name: 'OG Anunoby', position: 'F', ppg: 17.1, apg: 1.9, rpg: 5.0 },
-            { id: 'barrett', name: 'RJ Barrett', position: 'G', ppg: 21.8, apg: 3.4, rpg: 6.4 },
-        ]
-    },
-    'WAS': {
-        name: 'Washington Wizards',
-        alias: 'WAS',
-        players: [
-            { id: 'poole', name: 'Jordan Poole', position: 'G', ppg: 17.4, apg: 4.4, rpg: 2.7 },
-            { id: 'kuzma', name: 'Kyle Kuzma', position: 'F', ppg: 22.2, apg: 4.2, rpg: 6.6 },
-            { id: 'deni', name: 'Deni Avdija', position: 'F', ppg: 14.0, apg: 4.2, rpg: 7.2 },
-            { id: 'kispert', name: 'Corey Kispert', position: 'F', ppg: 10.4, apg: 1.7, rpg: 2.5 },
-            { id: 'gafford', name: 'Daniel Gafford', position: 'C', ppg: 9.8, apg: 0.8, rpg: 5.6 },
-        ]
-    },
-    'CHA': {
-        name: 'Charlotte Hornets',
-        alias: 'CHA',
-        players: [
-            { id: 'lamelo', name: 'LaMelo Ball', position: 'G', ppg: 23.9, apg: 8.0, rpg: 5.1 },
-            { id: 'rozier', name: 'Terry Rozier', position: 'G', ppg: 21.1, apg: 5.4, rpg: 4.0 },
-            { id: 'hayward', name: 'Gordon Hayward', position: 'F', ppg: 14.7, apg: 4.6, rpg: 4.2 },
-            { id: 'pj', name: 'P.J. Washington', position: 'F', ppg: 13.6, apg: 2.5, rpg: 5.3 },
-            { id: 'williams', name: 'Mark Williams', position: 'C', ppg: 9.7, apg: 0.9, rpg: 8.1 },
-        ]
-    },
-    'DET': {
-        name: 'Detroit Pistons',
-        alias: 'DET',
-        players: [
-            { id: 'cade', name: 'Cade Cunningham', position: 'G', ppg: 22.7, apg: 7.5, rpg: 4.3 },
-            { id: 'ivey', name: 'Jaden Ivey', position: 'G', ppg: 16.3, apg: 4.4, rpg: 3.9 },
-            { id: 'duren', name: 'Jalen Duren', position: 'C', ppg: 13.0, apg: 2.4, rpg: 11.6 },
-            { id: 'bogdanovic', name: 'Bojan Bogdanovic', position: 'F', ppg: 16.0, apg: 2.3, rpg: 3.8 },
-            { id: 'stewart', name: 'Isaiah Stewart', position: 'C', ppg: 8.5, apg: 1.5, rpg: 6.5 },
-        ]
-    },
-    'HOU': {
-        name: 'Houston Rockets',
-        alias: 'HOU',
-        players: [
-            { id: 'green', name: 'Jalen Green', position: 'G', ppg: 22.1, apg: 3.7, rpg: 5.2 },
-            { id: 'sengun', name: 'Alperen Sengun', position: 'C', ppg: 18.3, apg: 4.5, rpg: 9.3 },
-            { id: 'vanandr', name: 'Fred VanVleet', position: 'G', ppg: 14.5, apg: 7.2, rpg: 3.8 },
-            { id: 'whitmore', name: 'Cam Whitmore', position: 'F', ppg: 9.4, apg: 1.3, rpg: 3.5 },
-            { id: 'eason', name: 'Tari Eason', position: 'F', ppg: 8.7, apg: 1.0, rpg: 5.3 },
-        ]
-    },
-    'MEM': {
-        name: 'Memphis Grizzlies',
-        alias: 'MEM',
-        players: [
-            { id: 'ja', name: 'Ja Morant', position: 'G', ppg: 25.1, apg: 8.1, rpg: 5.6 },
-            { id: 'jjj', name: 'Jaren Jackson Jr.', position: 'C', ppg: 22.0, apg: 1.2, rpg: 5.5 },
-            { id: 'smart', name: 'Marcus Smart', position: 'G', ppg: 14.4, apg: 5.3, rpg: 3.5 },
-            { id: 'bane', name: 'Desmond Bane', position: 'G', ppg: 21.5, apg: 4.5, rpg: 4.4 },
-            { id: 'aldama', name: 'Santi Aldama', position: 'F', ppg: 9.2, apg: 2.1, rpg: 5.4 },
-        ]
-    },
-    'NOP': {
-        name: 'New Orleans Pelicans',
-        alias: 'NOP',
-        players: [
-            { id: 'zion', name: 'Zion Williamson', position: 'F', ppg: 22.9, apg: 5.0, rpg: 5.8 },
-            { id: 'bi', name: 'Brandon Ingram', position: 'F', ppg: 24.7, apg: 5.8, rpg: 5.1 },
-            { id: 'cj', name: 'CJ McCollum', position: 'G', ppg: 17.1, apg: 3.7, rpg: 3.8 },
-            { id: 'herb', name: 'Herb Jones', position: 'F', ppg: 11.4, apg: 2.6, rpg: 4.1 },
-            { id: 'valanciunas', name: 'Jonas Valančiunas', position: 'C', ppg: 13.1, apg: 2.0, rpg: 8.8 },
-        ]
-    },
-    'POR': {
-        name: 'Portland Trail Blazers',
-        alias: 'POR',
-        players: [
-            { id: 'anfernee', name: 'Anfernee Simons', position: 'G', ppg: 22.6, apg: 5.5, rpg: 2.8 },
-            { id: 'grant', name: 'Jerami Grant', position: 'F', ppg: 20.1, apg: 2.4, rpg: 4.5 },
-            { id: 'sharpe', name: 'Shaedon Sharpe', position: 'G', ppg: 15.9, apg: 2.1, rpg: 3.9 },
-            { id: 'ayton', name: 'Deandre Ayton', position: 'C', ppg: 16.7, apg: 1.7, rpg: 10.8 },
-            { id: 'brogdon', name: 'Malcolm Brogdon', position: 'G', ppg: 12.1, apg: 3.7, rpg: 3.4 },
-        ]
-    },
-    'SAS': {
-        name: 'San Antonio Spurs',
-        alias: 'SAS',
-        players: [
-            { id: 'wemby', name: 'Victor Wembanyama', position: 'C', ppg: 21.4, apg: 3.7, rpg: 10.6 },
-            { id: 'vassell', name: 'Devin Vassell', position: 'G', ppg: 18.5, apg: 3.8, rpg: 3.8 },
-            { id: 'keldon', name: 'Keldon Johnson', position: 'F', ppg: 15.0, apg: 2.4, rpg: 5.0 },
-            { id: 'sochan', name: 'Jeremy Sochan', position: 'F', ppg: 11.0, apg: 3.3, rpg: 5.9 },
-            { id: 'tre', name: 'Tre Jones', position: 'G', ppg: 10.3, apg: 5.4, rpg: 2.9 },
-        ]
-    },
-    'UTA': {
-        name: 'Utah Jazz',
-        alias: 'UTA',
-        players: [
-            { id: 'lauri', name: 'Lauri Markkanen', position: 'F', ppg: 25.6, apg: 1.9, rpg: 8.2 },
-            { id: 'sexton', name: 'Collin Sexton', position: 'G', ppg: 18.7, apg: 3.2, rpg: 3.0 },
-            { id: 'kessler', name: 'Walker Kessler', position: 'C', ppg: 8.1, apg: 0.9, rpg: 7.5 },
-            { id: 'clarkson', name: 'Jordan Clarkson', position: 'G', ppg: 16.0, apg: 3.6, rpg: 3.2 },
-            { id: 'hendricks', name: 'Taylor Hendricks', position: 'F', ppg: 7.1, apg: 0.9, rpg: 4.5 },
-        ]
-    },
-};
-
-// Helper: Get roster from mock data based on team alias
-function getMockRoster(alias: string): { name: string; alias: string; players: TeamPlayer[] } | null {
-    // First try exact match
-    if (MOCK_TEAM_ROSTERS[alias]) {
-        return MOCK_TEAM_ROSTERS[alias];
-    }
-    // Try to find by partial match
-    const upperAlias = alias.toUpperCase();
-    for (const [key, roster] of Object.entries(MOCK_TEAM_ROSTERS)) {
-        if (key.toUpperCase() === upperAlias || roster.alias.toUpperCase() === upperAlias) {
-            return roster;
-        }
-    }
-    return null;
-}
+// NOTE: MOCK_TEAM_ROSTERS has been REMOVED
+// We now use getGameSummary() for real-time rosters
+// This prevents issues like showing traded players on wrong teams
 
 // Generate projection for a player (deterministic based on player stats)
 function generatePlayerProjection(player: TeamPlayer, playerIndex: number = 0): PlayerProjection {
-    // Base projection is the player's PPG
-    const baseProjection = player.ppg;
-
-    // Use deterministic variance based on player name hash and PPG
+    // Use deterministic variance based on player name hash
     // This ensures consistent values between server and client
     const nameHash = player.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
     const varianceFactor = ((nameHash % 30) - 15) / 100; // -15% to +15%
-    const projection = baseProjection * (1 + varianceFactor);
 
-    // Generate a Vegas-like line (deterministic based on index and PPG)
+    // Line offset based on player index
     const lineOffset = ((playerIndex % 3) - 1) * 0.5; // -0.5, 0, or 0.5
-    const line = baseProjection + lineOffset;
 
-    // Calculate edge
-    const edge = ((projection - line) / line) * 100;
-    const isValueBet = Math.abs(edge) >= 10;
+    // POINTS
+    const pointsProjection = player.ppg * (1 + varianceFactor);
+    const pointsLine = player.ppg + lineOffset;
+    const pointsEdge = pointsLine > 0 ? ((pointsProjection - pointsLine) / pointsLine) * 100 : 0;
 
-    // Confidence based on player's consistency (higher PPG = typically more reliable)
+    // ASSISTS
+    const assistsProjection = player.apg * (1 + varianceFactor * 0.8); // Less variance for assists
+    const assistsLine = player.apg + (lineOffset * 0.3);
+    const assistsEdge = assistsLine > 0 ? ((assistsProjection - assistsLine) / assistsLine) * 100 : 0;
+
+    // REBOUNDS
+    const reboundsProjection = player.rpg * (1 + varianceFactor * 0.7);
+    const reboundsLine = player.rpg + (lineOffset * 0.4);
+    const reboundsEdge = reboundsLine > 0 ? ((reboundsProjection - reboundsLine) / reboundsLine) * 100 : 0;
+
+    // THREE POINTERS (use tpg if available, fallback to estimated from ppg)
+    const tpg = (player as TeamPlayer & { tpg?: number }).tpg ?? (player.ppg * 0.08); // Estimate ~8% of points from 3s
+    const threesProjection = tpg * (1 + varianceFactor);
+    const threesLine = tpg + (lineOffset * 0.2);
+    const threesEdge = threesLine > 0 ? ((threesProjection - threesLine) / threesLine) * 100 : 0;
+
+    // Any stat with edge >= 10% is a value bet
+    const isValueBet = Math.abs(pointsEdge) >= 10 || Math.abs(assistsEdge) >= 10 ||
+        Math.abs(reboundsEdge) >= 10 || Math.abs(threesEdge) >= 10;
+
+    // Confidence based on player's consistency
     const confidence = Math.min(95, 70 + (player.ppg / 30) * 25);
 
     return {
         playerId: player.id,
         playerName: player.name,
         position: player.position,
-        projection: parseFloat(projection.toFixed(1)),
-        line: parseFloat(line.toFixed(1)),
-        edge: parseFloat(edge.toFixed(1)),
+        // Points
+        projection: parseFloat(pointsProjection.toFixed(1)),
+        line: parseFloat(pointsLine.toFixed(1)),
+        edge: parseFloat(pointsEdge.toFixed(1)),
+        // Assists
+        assistsProjection: parseFloat(assistsProjection.toFixed(1)),
+        assistsLine: parseFloat(assistsLine.toFixed(1)),
+        assistsEdge: parseFloat(assistsEdge.toFixed(1)),
+        // Rebounds
+        reboundsProjection: parseFloat(reboundsProjection.toFixed(1)),
+        reboundsLine: parseFloat(reboundsLine.toFixed(1)),
+        reboundsEdge: parseFloat(reboundsEdge.toFixed(1)),
+        // Threes
+        threesProjection: parseFloat(threesProjection.toFixed(1)),
+        threesLine: parseFloat(threesLine.toFixed(1)),
+        threesEdge: parseFloat(threesEdge.toFixed(1)),
+        // Meta
         isValueBet,
         confidence: Math.round(confidence),
     };
@@ -496,9 +203,10 @@ function generateReasoning(
 }
 
 // Main function: Get complete game analysis
+// NOW USES: Real-time game summary roster + Injury filtering
 export const getGameAnalysis = cache(async (gameId: string): Promise<GameAnalysis | null> => {
     try {
-        // Get schedule to find game info
+        // Get schedule to find game basic info
         const schedule = await getSchedule();
         const game = schedule.games.find(g => g.id === gameId);
 
@@ -507,90 +215,282 @@ export const getGameAnalysis = cache(async (gameId: string): Promise<GameAnalysi
             return null;
         }
 
-        // Try to get real rosters first, fallback to mock data
-        let homeRoster = await getTeamRoster(game.home.id);
-        let awayRoster = await getTeamRoster(game.away.id);
+        // Fetch game summary, injuries, team rosters, and SEASONAL STATS in parallel
+        const [gameSummary, injuryReport, homeTeamRoster, awayTeamRoster, homeSeasonalStats, awaySeasonalStats] = await Promise.all([
+            getGameSummary(gameId).catch(() => null),
+            getInjuries().catch(() => ({ date: '', injuries: [] as Injury[] })),
+            getTeamRoster(game.home.id).catch(() => null),
+            getTeamRoster(game.away.id).catch(() => null),
+            getTeamSeasonalStats(game.home.id).catch(() => new Map<string, PlayerSeasonalStats>()),
+            getTeamSeasonalStats(game.away.id).catch(() => new Map<string, PlayerSeasonalStats>()),
+        ]);
 
-        // Helper: Check if roster has meaningful stats (at least one player with PPG > 0)
-        const hasValidStats = (roster: TeamRoster | null): boolean => {
-            if (!roster || roster.players.length === 0) return false;
-            return roster.players.slice(0, 3).some(p => p.ppg > 0);
+        const injuries = injuryReport.injuries || [];
+        console.log(`[GameAnalysis] Fetched ${injuries.length} injuries`);
+        console.log(`[GameAnalysis] Home seasonal stats: ${homeSeasonalStats.size} players`);
+        console.log(`[GameAnalysis] Away seasonal stats: ${awaySeasonalStats.size} players`);
+
+        // ==========================================================
+        // DATA HYDRATION STRATEGY:
+        // - Game Summary: WHO is playing today (real-time roster)
+        // - Team Roster: WHAT are their season averages (PPG/APG/RPG)
+        // - We MERGE both: active roster + historical stats
+        // ==========================================================
+
+        // Helper: Normalize name for matching (same pattern as odds.ts)
+        const normalizeName = (name: string): string => {
+            return name
+                .toLowerCase()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove accents
+                .replace(/[.']/g, '')           // Remove dots and apostrophes
+                .replace(/\s+(jr|sr|ii|iii|iv|v)$/i, '')  // Remove suffixes
+                .trim();
         };
 
-        // Use mock data if API fails, returns empty, or has no stats
-        if (!hasValidStats(homeRoster)) {
-            console.log(`[GameAnalysis] Using mock for home team: ${game.home.alias}`);
-            const mockHome = getMockRoster(game.home.alias);
-            if (mockHome) {
-                homeRoster = {
-                    teamId: game.home.id,
-                    teamName: mockHome.name,
-                    alias: mockHome.alias,
-                    players: mockHome.players,
-                };
+        // Build DUAL stats lookup: by ID (primary) and by normalized name (fallback)
+        // NOW USES: getTeamSeasonalStats (proper averages from /seasons/2024/REG/teams/{id}/statistics.json)
+        type PlayerStats = { ppg: number; apg: number; rpg: number; name: string };
+
+        const buildDualStatsMap = (seasonalStats: Map<string, PlayerSeasonalStats>): {
+            byId: Map<string, PlayerStats>;
+            byName: Map<string, PlayerStats>;
+        } => {
+            const byId = new Map<string, PlayerStats>();
+            const byName = new Map<string, PlayerStats>();
+
+            for (const [id, stats] of seasonalStats) {
+                const playerStats = { ppg: stats.ppg, apg: stats.apg, rpg: stats.rpg, name: stats.name };
+                byId.set(id, playerStats);
+                byName.set(normalizeName(stats.name), playerStats);
             }
-        }
 
-        if (!hasValidStats(awayRoster)) {
-            console.log(`[GameAnalysis] Using mock for away team: ${game.away.alias}`);
-            const mockAway = getMockRoster(game.away.alias);
-            if (mockAway) {
-                awayRoster = {
-                    teamId: game.away.id,
-                    teamName: mockAway.name,
-                    alias: mockAway.alias,
-                    players: mockAway.players,
-                };
+            return { byId, byName };
+        };
+
+        const homeStatsLookup = buildDualStatsMap(homeSeasonalStats);
+        const awayStatsLookup = buildDualStatsMap(awaySeasonalStats);
+
+        console.log(`[GameAnalysis] Built stats maps - Home: ${homeStatsLookup.byId.size} (byId), ${homeStatsLookup.byName.size} (byName)`);
+
+        const gameSummaryHasPlayers = gameSummary &&
+            gameSummary.home.players.length > 0 &&
+            gameSummary.away.players.length > 0;
+
+        console.log(`[GameAnalysis] Game summary has players: ${gameSummaryHasPlayers}`);
+
+        // Helper: Hydrate GameSummary players with season stats
+        // Uses WHO from game summary, but STATS from team roster
+        // Falls back to name matching if IDs don't match
+        const hydrateGameSummaryPlayers = (
+            players: NonNullable<typeof gameSummary>['home']['players'],
+            teamId: string,
+            statsLookup: { byId: Map<string, PlayerStats>; byName: Map<string, PlayerStats> }
+        ): TeamPlayer[] => {
+            const teamInjuries = injuries.filter(i => i.teamId === teamId);
+
+            return players
+                .filter(p => {
+                    const injury = teamInjuries.find(i => i.playerId === p.id);
+                    if (injury && injury.status === 'Out') {
+                        console.log(`[GameAnalysis] Filtering OUT injured player: ${p.full_name}`);
+                        return false;
+                    }
+                    return true;
+                })
+                .map(p => {
+                    const injury = teamInjuries.find(i => i.playerId === p.id);
+                    const isDayToDay = injury?.status === 'Day-To-Day';
+
+                    // HYDRATION: Try by ID first, then by normalized name
+                    let seasonStats = statsLookup.byId.get(p.id);
+                    let matchedBy = 'id';
+
+                    if (!seasonStats) {
+                        // Fallback: Try matching by normalized name
+                        const normalizedPlayerName = normalizeName(p.full_name);
+                        seasonStats = statsLookup.byName.get(normalizedPlayerName);
+                        matchedBy = seasonStats ? 'name' : 'none';
+                    }
+
+                    const ppg = seasonStats?.ppg || 12.0; // Fallback for rookies/new players
+                    const apg = seasonStats?.apg || 2.0;
+                    const rpg = seasonStats?.rpg || 3.0;
+
+                    if (seasonStats) {
+                        console.log(`[GameAnalysis] ✓ Hydrated ${p.full_name} (matched by ${matchedBy}): PPG=${ppg.toFixed(1)}`);
+                    } else {
+                        console.log(`[GameAnalysis] ✗ No stats found for ${p.full_name} (ID: ${p.id}), using defaults`);
+                    }
+
+                    return {
+                        id: p.id,
+                        name: isDayToDay ? `${p.full_name} ⚠️` : p.full_name,
+                        position: p.position || 'N/A',
+                        ppg,
+                        apg,
+                        rpg,
+                    };
+                });
+        };
+
+        // Helper: Filter injuries from TeamRoster (already has season stats)
+        const filterRosterInjuries = (
+            roster: TeamRoster | null,
+            teamId: string
+        ): TeamPlayer[] => {
+            if (!roster || roster.players.length === 0) return [];
+
+            const teamInjuries = injuries.filter(i => i.teamId === teamId);
+
+            return roster.players
+                .filter(p => {
+                    const injury = teamInjuries.find(i => i.playerId === p.id);
+                    if (injury && injury.status === 'Out') {
+                        console.log(`[GameAnalysis] Filtering OUT injured player: ${p.name}`);
+                        return false;
+                    }
+                    return true;
+                })
+                .map(p => {
+                    const injury = teamInjuries.find(i => i.playerId === p.id);
+                    const isDayToDay = injury?.status === 'Day-To-Day';
+
+                    return {
+                        ...p,
+                        name: isDayToDay ? `${p.name} ⚠️` : p.name,
+                    };
+                });
+        };
+
+        let homePlayers: TeamPlayer[];
+        let awayPlayers: TeamPlayer[];
+
+        // Detect if game has actually started by checking:
+        // 1. Game summary has players
+        // 2. At least one player has non-zero game stats (points scored)
+        const gameHasStarted = gameSummary &&
+            gameSummary.home.players.length > 0 &&
+            gameSummary.home.players.some(p => (p.statistics?.points ?? 0) > 0);
+
+        console.log(`[GameAnalysis] Game has started: ${gameHasStarted}`);
+
+        // Helper: Convert seasonal stats Map to TeamPlayer array
+        const seasonalStatsToPlayers = (statsMap: Map<string, PlayerSeasonalStats>, teamId: string): TeamPlayer[] => {
+            const teamInjuries = injuries.filter(i => i.teamId === teamId);
+            const players: TeamPlayer[] = [];
+
+            for (const [id, stats] of statsMap) {
+                const injury = teamInjuries.find(i => i.playerId === id);
+                if (injury && injury.status === 'Out') {
+                    console.log(`[GameAnalysis] Filtering OUT injured player: ${stats.name}`);
+                    continue;
+                }
+
+                const isDayToDay = injury?.status === 'Day-To-Day';
+                players.push({
+                    id,
+                    name: isDayToDay ? `${stats.name} ⚠️` : stats.name,
+                    position: 'N/A', // Position not available from seasonal stats
+                    ppg: stats.ppg,
+                    apg: stats.apg,
+                    rpg: stats.rpg,
+                });
             }
+
+            // Sort by PPG descending
+            players.sort((a, b) => b.ppg - a.ppg);
+            return players;
+        };
+
+        if (gameHasStarted && homeStatsLookup.byId.size > 0 && awayStatsLookup.byId.size > 0) {
+            // GAME IN PROGRESS: Use game summary (real-time) + Season stats (hydrated)
+            console.log(`[GameAnalysis] Using HYDRATED roster: game in progress`);
+            homePlayers = hydrateGameSummaryPlayers(gameSummary!.home.players, gameSummary!.home.id, homeStatsLookup);
+            awayPlayers = hydrateGameSummaryPlayers(gameSummary!.away.players, gameSummary!.away.id, awayStatsLookup);
+        } else if (homeSeasonalStats.size > 0 && awaySeasonalStats.size > 0) {
+            // PRE-GAME: Use seasonal stats directly (has proper PPG/APG/RPG)
+            console.log(`[GameAnalysis] Using SEASONAL STATS for PRE-GAME analysis`);
+            console.log(`[GameAnalysis] Home seasonal stats has ${homeSeasonalStats.size} players`);
+            console.log(`[GameAnalysis] Away seasonal stats has ${awaySeasonalStats.size} players`);
+            homePlayers = seasonalStatsToPlayers(homeSeasonalStats, game.home.id);
+            awayPlayers = seasonalStatsToPlayers(awaySeasonalStats, game.away.id);
+        } else {
+            // Both sources failed
+            console.error(`[GameAnalysis] Could not get roster data for ${gameId}`);
+            return null;
         }
 
-        // If we still don't have rosters, create generic ones
-        if (!homeRoster) {
-            console.log(`[GameAnalysis] Creating generic roster for: ${game.home.alias}`);
-            homeRoster = createGenericRoster(game.home.id, game.home.name, game.home.alias);
-        }
-        if (!awayRoster) {
-            console.log(`[GameAnalysis] Creating generic roster for: ${game.away.alias}`);
-            awayRoster = createGenericRoster(game.away.id, game.away.name, game.away.alias);
-        }
 
-        // Get top 3 players from each team (with non-null assertion since we create fallbacks above)
-        const homeTopPlayers = homeRoster!.players.slice(0, 3);
-        const awayTopPlayers = awayRoster!.players.slice(0, 3);
+        // Sort by PPG descending to get top players
+        homePlayers.sort((a, b) => b.ppg - a.ppg);
+        awayPlayers.sort((a, b) => b.ppg - a.ppg);
+
+        // Build rosters using the correct source
+        const homeRoster: TeamRoster = gameSummaryHasPlayers
+            ? {
+                teamId: gameSummary!.home.id,
+                teamName: gameSummary!.home.name,
+                alias: gameSummary!.home.alias,
+                players: homePlayers,
+            }
+            : {
+                teamId: homeTeamRoster!.teamId,
+                teamName: homeTeamRoster!.teamName,
+                alias: homeTeamRoster!.alias,
+                players: homePlayers,
+            };
+
+        const awayRoster: TeamRoster = gameSummaryHasPlayers
+            ? {
+                teamId: gameSummary!.away.id,
+                teamName: gameSummary!.away.name,
+                alias: gameSummary!.away.alias,
+                players: awayPlayers,
+            }
+            : {
+                teamId: awayTeamRoster!.teamId,
+                teamName: awayTeamRoster!.teamName,
+                alias: awayTeamRoster!.alias,
+                players: awayPlayers,
+            };
+
+        // Get top 3 players from each team
+        const homeTopPlayers = homeRoster.players.slice(0, 3);
+        const awayTopPlayers = awayRoster.players.slice(0, 3);
 
         // Generate projections (pass index for deterministic variance)
-        const homeProjections = homeTopPlayers.map((p, idx) => generatePlayerProjection(p, idx));
-        const awayProjections = awayTopPlayers.map((p, idx) => generatePlayerProjection(p, idx));
+        const homeProjections = homeTopPlayers.map((p: TeamPlayer, idx: number) => generatePlayerProjection(p, idx));
+        const awayProjections = awayTopPlayers.map((p: TeamPlayer, idx: number) => generatePlayerProjection(p, idx));
 
         // Calculate win probability
-        const probData = calculateWinProbability(homeRoster!.players, awayRoster!.players);
+        const probData = calculateWinProbability(homeRoster.players, awayRoster.players);
         const favoredTeam: 'home' | 'away' = probData.homeWinProb >= 50 ? 'home' : 'away';
 
         // Generate reasoning
         const reasoning = generateReasoning(
-            { alias: homeRoster!.alias, players: homeRoster!.players },
-            { alias: awayRoster!.alias, players: awayRoster!.players },
+            { alias: homeRoster.alias, players: homeRoster.players },
+            { alias: awayRoster.alias, players: awayRoster.players },
             probData,
             favoredTeam
         );
 
-        const favored = favoredTeam === 'home' ? homeRoster!.alias : awayRoster!.alias;
+        const favored = favoredTeam === 'home' ? homeRoster.alias : awayRoster.alias;
         const favProb = favoredTeam === 'home' ? probData.homeWinProb : (100 - probData.homeWinProb);
 
         return {
             gameId,
             scheduled: game.scheduled,
             homeTeam: {
-                id: homeRoster!.teamId,
-                name: homeRoster!.teamName,
-                alias: homeRoster!.alias,
+                id: homeRoster.teamId,
+                name: homeRoster.teamName,
+                alias: homeRoster.alias,
                 winProbability: probData.homeWinProb,
                 players: homeProjections,
             },
             awayTeam: {
-                id: awayRoster!.teamId,
-                name: awayRoster!.teamName,
-                alias: awayRoster!.alias,
+                id: awayRoster.teamId,
+                name: awayRoster.teamName,
+                alias: awayRoster.alias,
                 winProbability: 100 - probData.homeWinProb,
                 players: awayProjections,
             },
@@ -606,16 +506,3 @@ export const getGameAnalysis = cache(async (gameId: string): Promise<GameAnalysi
     }
 });
 
-// Create a generic roster when we have no data
-function createGenericRoster(teamId: string, teamName: string, alias: string): TeamRoster {
-    return {
-        teamId,
-        teamName,
-        alias,
-        players: [
-            { id: `${alias}-1`, name: `${alias} Star Player`, position: 'G', ppg: 22.0, apg: 5.0, rpg: 4.0 },
-            { id: `${alias}-2`, name: `${alias} Second Option`, position: 'F', ppg: 18.0, apg: 3.0, rpg: 6.0 },
-            { id: `${alias}-3`, name: `${alias} Third Scorer`, position: 'C', ppg: 14.0, apg: 2.0, rpg: 8.0 },
-        ],
-    };
-}

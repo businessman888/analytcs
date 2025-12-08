@@ -404,3 +404,86 @@ export function oddsToImpliedProbability(decimalOdds: number): number {
 export function probabilityToFairOdds(probability: number): number {
     return 100 / probability;
 }
+
+// ============================
+// AGGREGATED PLAYER ODDS
+// Solves the UUID/URN mismatch by using Name Normalization
+// ============================
+
+export interface AggregatedPlayerOdds {
+    playerId: string;      // URN from odds API
+    playerName: string;
+    odds: {
+        points?: { line: number; over: number; under: number };
+        assists?: { line: number; over: number; under: number };
+        rebounds?: { line: number; over: number; under: number };
+        threes?: { line: number; over: number; under: number };
+    };
+}
+
+// Helper: Normalize player name for matching
+// Stats API returns UUIDs, Odds API returns URNs - we match by NAME
+function normalizePlayerName(name: string): string {
+    return name
+        .toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove accents
+        .replace(/[.']/g, '')           // Remove dots and apostrophes
+        .replace(/\s+(jr|sr|ii|iii|iv|v)$/i, '')  // Remove suffixes
+        .trim();
+}
+
+// Aggregate all player props by player (using name matching)
+// Returns each player with ALL their market lines in one object
+export const getAggregatedPlayerOdds = cache(async (
+    gameId: string,
+    gameInfo?: { homeTeam: string; awayTeam: string }
+): Promise<AggregatedPlayerOdds[]> => {
+    const propsResponse = await getPlayerProps(gameId, gameInfo);
+
+    if (!propsResponse || propsResponse.usedMockData) {
+        console.log(`[Odds] Aggregation skipped - no real data for ${gameId}`);
+        return [];
+    }
+
+    // Group props by normalized player name
+    const playerMap = new Map<string, AggregatedPlayerOdds>();
+
+    for (const prop of propsResponse.props) {
+        const normalizedName = normalizePlayerName(prop.playerName);
+
+        if (!playerMap.has(normalizedName)) {
+            playerMap.set(normalizedName, {
+                playerId: prop.playerId,
+                playerName: prop.playerName,
+                odds: {},
+            });
+        }
+
+        const player = playerMap.get(normalizedName)!;
+
+        // Add each market to the player's odds object
+        const bestOver = prop.bestOverOdd?.odds ?? 1.90;
+        const bestUnder = prop.bestUnderOdd?.odds ?? 1.90;
+
+        switch (prop.market) {
+            case 'points':
+                player.odds.points = { line: prop.line, over: bestOver, under: bestUnder };
+                break;
+            case 'assists':
+                player.odds.assists = { line: prop.line, over: bestOver, under: bestUnder };
+                break;
+            case 'rebounds':
+                player.odds.rebounds = { line: prop.line, over: bestOver, under: bestUnder };
+                break;
+            case 'threes':
+                player.odds.threes = { line: prop.line, over: bestOver, under: bestUnder };
+                break;
+        }
+    }
+
+    const aggregated = Array.from(playerMap.values());
+    console.log(`[Odds] Aggregated ${aggregated.length} players with multi-market odds for game ${gameId}`);
+
+    return aggregated;
+});
+
