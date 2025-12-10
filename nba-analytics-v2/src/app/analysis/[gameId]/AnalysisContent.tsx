@@ -12,7 +12,9 @@ import {
     Trophy,
     Users,
     Target,
-    ChevronRight
+    ChevronRight,
+    Star,
+    AlertTriangle
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -35,6 +37,19 @@ interface TeamAnalysis {
     players: PlayerProjection[];
 }
 
+interface DailyPick {
+    type: 'prop_over' | 'prop_under' | 'moneyline_value';
+    title: string;
+    reasoning: string;
+    confidenceScore: number;
+    edgePercentage: number;
+    bookmakerOdd: number;
+    projection?: number;
+    line?: number;
+    playerName?: string;
+    teamAlias?: string;
+}
+
 interface GameAnalysis {
     gameId: string;
     scheduled: string;
@@ -45,6 +60,7 @@ interface GameAnalysis {
         reasoning: string[];
         summary: string;
     };
+    dailyPick: DailyPick | null;
 }
 
 async function fetchGameAnalysis(gameId: string): Promise<GameAnalysis> {
@@ -286,6 +302,100 @@ function WinProbabilityBar({ homeProb, awayProb, homeAlias, awayAlias }: {
     );
 }
 
+// Daily Pick Card - Shows best betting opportunity or "Market Efficient" state
+function DailyPickCard({ pick }: { pick: DailyPick | null }) {
+    // No pick = Market is efficient
+    if (!pick) {
+        return (
+            <section className="bg-slate-800/50 rounded-2xl border border-white/10 p-6">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center">
+                        <AlertTriangle className="text-slate-400" size={20} />
+                    </div>
+                    <div>
+                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">
+                            Mercado Eficiente
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-300">
+                            Sem Edge Estatístico Claro
+                        </h3>
+                        <p className="text-sm text-slate-500 mt-1">
+                            Nenhuma oportunidade supera os thresholds mínimos de edge (12% props / 8% moneyline).
+                        </p>
+                    </div>
+                </div>
+            </section>
+        );
+    }
+
+    // Calculate potential return from bookmaker odd
+    const potentialReturn = ((pick.bookmakerOdd - 1) * 100).toFixed(0);
+
+    // Confidence label
+    const getConfidenceLabel = (score: number) => {
+        if (score >= 8) return 'Alta';
+        if (score >= 6) return 'Média';
+        return 'Moderada';
+    };
+
+    return (
+        <section className="relative overflow-hidden rounded-2xl border border-orange-500/30 bg-gradient-to-br from-slate-900 via-slate-900 to-orange-950/30">
+            {/* Gradient accent */}
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-amber-500" />
+
+            <div className="p-6">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                    {/* Left side - Pick details */}
+                    <div className="flex-1 min-w-[280px]">
+                        {/* Badge */}
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/20 border border-orange-500/30 mb-4">
+                            <Star className="text-orange-400" size={14} fill="currentColor" />
+                            <span className="text-xs font-bold text-orange-400 uppercase tracking-wide">
+                                Palpite do Dia
+                            </span>
+                        </div>
+
+                        {/* Title */}
+                        <h2 className="text-2xl font-bold text-white mb-2">
+                            {pick.title}
+                        </h2>
+
+                        {/* Reasoning */}
+                        <p className="text-sm text-gray-400 mb-4">
+                            {pick.reasoning}
+                        </p>
+
+                        {/* Meta info */}
+                        <div className="flex flex-wrap items-center gap-4 text-sm">
+                            <span className="flex items-center gap-1.5 text-gray-400">
+                                <TrendingUp size={14} className="text-green-400" />
+                                Confiança: <strong className="text-white">{getConfidenceLabel(pick.confidenceScore)} ({pick.confidenceScore}/10)</strong>
+                            </span>
+                            <span className="text-gray-500">•</span>
+                            <span className="text-gray-400">
+                                Odd Sugerida: <strong className="text-white">{pick.bookmakerOdd.toFixed(2)}</strong>
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Right side - Return badge */}
+                    <div className="text-right">
+                        <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">
+                            Retorno Potencial
+                        </div>
+                        <div className="text-3xl font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
+                            +{potentialReturn}%
+                        </div>
+                        <div className="text-xs text-gray-500">
+                            ROI Projetado
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    );
+}
+
 export default function AnalysisContent() {
     const params = useParams();
     const gameId = params.gameId as string;
@@ -341,6 +451,9 @@ export default function AnalysisContent() {
                 <h1 className="text-3xl font-bold mb-2">Análise de Jogo</h1>
                 <p className="text-gray-400 font-mono text-sm">{gameTitle}</p>
             </div>
+
+            {/* Daily Pick - TOP POSITION */}
+            <DailyPickCard pick={analysis.dailyPick} />
 
             {/* Win Probability Section */}
             <section className="bg-slate-900/50 rounded-2xl border border-white/5 p-6">
